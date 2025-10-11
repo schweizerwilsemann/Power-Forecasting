@@ -1,0 +1,35 @@
+Ở giao diện bạn thấy tùy chọn “Next 15-minute step” chính là chế độ gọi endpoint /forecast/next của backend. Mô hình đã được huấn luyện với dữ liệu ở 
+  bước thời gian 15 phút, nên:
+
+  - Horizon mặc định = 1 nghĩa là dự báo cho đúng bước tiếp theo so với hiện tại, tức là 15 phút tới.
+  - Khi bạn bấm Forecast ở chế độ này, frontend gửi payload kiểu { "horizon": 1, "includeComponents": false } (hoặc horizon khác nếu bạn chỉnh).        
+  - Backend sẽ lấy 500 bản ghi gần nhất từ Renewable.csv, tạo đặc trưng, rồi trả về prediction_wh: sản lượng điện (Wh) mà hệ thống dự đoán cho khoảng   
+  thời gian 15 phút kế tiếp.
+  - Nếu bạn bật “Include tree leaf indices”, API sẽ trả thêm thông tin giải thích (LightGBM leaf indices) nhưng con số Wh vẫn là trọng tâm.
+
+  Tóm lại, “Next 15-minute step” = dự báo ngắn hạn ngay bước kế tiếp trong chuỗi thời gian 15 phút của hệ thống.
+
+  Batch Payload                                                                                                                                         
+                                                                                                                                                        
+  - future_weather: bắt buộc khi muốn dự báo nhiều bước; là mảng các JSON object với cột giống Renewable.csv. Ít nhất phải có Time (định dạng đọc được  
+  bởi pandas, ví dụ 01/07/2022 12:00). Các cột khác (Energy delta[Wh], GHI, temp, humidity, wind_speed, clouds_all, rain_1h, snow_1h, sunlightTime,     
+  SunlightTime/daylength, …) đều hữu ích vì chúng sẽ được tạo đặc trưng [backend/app/application/services.py:71].                                       
+  - history: tùy chọn mảng JSON để bạn cung cấp lịch sử riêng. Nếu bỏ trống, backend tự lấy ~500 dòng cuối của Renewable.csv [backend/app/application/  
+  services.py:61].                                                                                                                                      
+  - timestamps: tùy chọn mảng chuỗi ISO (vd. ["2022-07-01T12:00Z", ...]). Nếu không gửi, backend sẽ lấy trực tiếp từ cột Time của future_weather        
+  [backend/app/application/services.py:82].                                                                                                             
+                                                                                                                                                        
+  Ví dụ Gửi                                                                                                                                                        
+  Time,Energy,GHI,temp,humidity,wind_speed,clouds
+  01/07/2022 12:00,225,680,31,1008,45,3.5
+  01/07/2022 12:15,235,702,32,1007,43,3.8                                                                                                                                           
+                                                                                                                                                        
+  Phản Hồi                                                                                                                                              
+  Danh sách các bản ghi, mỗi bản gồm:                                                                                                                   
+                                                                                                                                                        
+  - prediction_wh: giá trị dự báo (Wh).                                                                                                                 
+  - horizon_steps: số bước mô hình hỗ trợ (thường bằng horizon đã training).                                                                            
+  - timestamp: chuỗi bạn gửi trong timestamps hoặc thời gian lấy từ future_weather.                                                                     
+                                                                                                                                                        
+  Frontend (form “Batch forecast”) thực tế parse block CSV thành future_weather, bỏ qua history và timestamps nếu bạn không điền; backend vẫn hoạt động 
+  vì lịch sử mặc định luôn có sẵn.                    
