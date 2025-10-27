@@ -86,26 +86,29 @@ def test_advanced_forecasting():
     
     tests = [
         ("POST", "/forecast/advanced", {
-            "horizon": 4,
+            "horizon": 1,
             "include_confidence": True,
             "ensemble_mode": False
         }),
-        ("POST", "/forecast/scenarios", [
-            {
-                "name": "Optimistic",
-                "GHI": 800,
-                "temp": 25,
-                "clouds_all": 20,
-                "wind_speed": 3
-            },
-            {
-                "name": "Realistic", 
-                "GHI": 600,
-                "temp": 22,
-                "clouds_all": 40,
-                "wind_speed": 4
-            }
-        ]),
+        ("POST", "/forecast/scenarios", {
+            "horizon": 1,
+            "weather_scenarios": [
+                {
+                    "name": "Optimistic",
+                    "GHI": 800,
+                    "temp": 25,
+                    "clouds_all": 20,
+                    "wind_speed": 3
+                },
+                {
+                    "name": "Realistic", 
+                    "GHI": 600,
+                    "temp": 22,
+                    "clouds_all": 40,
+                    "wind_speed": 4
+                }
+            ]
+        }),
     ]
     
     passed = 0

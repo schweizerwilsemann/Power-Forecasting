@@ -29,6 +29,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { normalizeTimestamp } from '../utils/time';
 
 const props = defineProps({
   series: {
@@ -47,11 +48,14 @@ const percentFormatter = new Intl.NumberFormat('en', {
 });
 
 const normalizedSeries = computed(() =>
-  props.series.map((point, index) => ({
-    id: `${point.timestamp ?? index}-${index}`,
-    label: point.timestamp ?? `Step ${index + 1}`,
-    value: Number(point?.prediction_wh),
-  })),
+  props.series.map((point, index) => {
+    const label = point.timestamp ? normalizeTimestamp(point.timestamp) : `Step ${index + 1}`;
+    return {
+      id: `${label ?? index}-${index}`,
+      label,
+      value: Number(point?.prediction_wh),
+    };
+  }),
 );
 
 const maxValue = computed(() => {

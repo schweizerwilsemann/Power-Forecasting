@@ -27,7 +27,7 @@
     <!-- Main Content -->
     <main class="main-content">
       <!-- Dashboard Tab -->
-      <Dashboard v-if="activeTab === 'dashboard'" />
+<Dashboard v-if="activeTab === 'dashboard'" :available-horizons="availableHorizonOptions" />
 
       <!-- Basic Forecast Tab -->
       <div v-else-if="activeTab === 'forecast'" class="page">
@@ -82,7 +82,11 @@
 
         <div class="layout-grid">
           <div class="stack">
-            <ForecastForm :loading="loading" @forecast="triggerForecast" />
+            <ForecastForm
+              :loading="loading"
+              :horizon-options="availableHorizonOptions"
+              @forecast="triggerForecast"
+            />
             <ForecastInsights :series="results" :metrics="metrics" />
           </div>
           <div class="stack">
@@ -94,7 +98,10 @@
       </div>
 
       <!-- Advanced Forecast Tab -->
-      <AdvancedForecast v-else-if="activeTab === 'advanced'" />
+      <AdvancedForecast
+        v-else-if="activeTab === 'advanced'"
+        :available-horizons="availableHorizonOptions"
+      />
 
       <!-- Data Quality Tab -->
       <DataQuality v-else-if="activeTab === 'quality'" />
@@ -139,6 +146,7 @@ import ForecastTimeline from './components/ForecastTimeline.vue';
 import AdvancedForecast from './components/AdvancedForecast.vue';
 import DataQuality from './components/DataQuality.vue';
 import { useForecastApi } from './composables/useForecastApi';
+import { normalizeTimestamp, toIsoLocalString } from './utils/time';
 
 const MAX_HISTORY = 5;
 
@@ -158,6 +166,16 @@ const history = ref([]);
 const loading = ref(false);
 const metrics = ref(null);
 const { fetchNext, fetchBatch, fetchMetrics } = useForecastApi();
+const availableHorizonOptions = computed(() => {
+  const list = metrics.value?.available_horizons;
+  if (Array.isArray(list) && list.length) {
+    return [...new Set(list)].sort((a, b) => a - b);
+  }
+  if (metrics.value?.horizon) {
+    return [metrics.value.horizon];
+  }
+  return [1];
+});
 
 const deepClone = (data) => JSON.parse(JSON.stringify(data ?? []));
 
@@ -177,7 +195,10 @@ const formatRangeLabel = (series) => {
   if (!series.length) return null;
   const first = series[0]?.timestamp ?? 'Step 1';
   const last = series[series.length - 1]?.timestamp ?? `Step ${series.length}`;
-  return { start: first, end: last };
+  return {
+    start: normalizeTimestamp(first) ?? first,
+    end: normalizeTimestamp(last) ?? last,
+  };
 };
 
 const registerHistory = (mode, payload, series) => {
@@ -199,13 +220,20 @@ const registerHistory = (mode, payload, series) => {
   history.value = [entry, ...history.value].slice(0, MAX_HISTORY);
 };
 
+const normalizeSeriesTimestamps = (series) =>
+  series.map((point) => ({
+    ...point,
+    timestamp: point.timestamp ? normalizeTimestamp(point.timestamp) : undefined,
+  }));
+
 const triggerForecast = async ({ mode, payload }) => {
   loading.value = true;
   try {
     const response = mode === 'next' ? await fetchNext(payload) : await fetchBatch(payload);
     const normalized = Array.isArray(response) ? response : [response];
-    results.value = normalized;
-    registerHistory(mode, payload, normalized);
+    const withIsoTimestamps = normalizeSeriesTimestamps(normalized);
+    results.value = withIsoTimestamps;
+    registerHistory(mode, payload, withIsoTimestamps);
   } catch (error) {
     alert(error?.response?.data?.detail ?? error.message ?? 'Request failed');
   } finally {
@@ -247,7 +275,7 @@ const downloadCsv = () => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `pv-forecast-${new Date().toISOString().replace(/[:]/g, '-')}.csv`;
+  anchor.download = `pv-forecast-${toIsoLocalString(new Date()).replace(/[:]/g, '-')}.csv`;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);
@@ -258,7 +286,7 @@ const lastRunLabel = computed(() => {
   if (!results.value.length) return null;
   const lastPoint = results.value[results.value.length - 1];
   if (!lastPoint?.timestamp) return `Generated ${results.value.length} step(s)`;
-  return `Latest timestamp: ${lastPoint.timestamp}`;
+  return `Latest timestamp: ${normalizeTimestamp(lastPoint.timestamp) ?? lastPoint.timestamp}`;
 });
 
 const formattedMae = computed(() =>

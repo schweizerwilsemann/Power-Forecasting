@@ -99,11 +99,14 @@
         <div class="section-header">
           <h2>Real-time Forecast</h2>
           <div class="chart-controls">
-            <select v-model="selectedHorizon" @change="updateForecast">
-              <option value="1">1 Step (15min)</option>
-              <option value="4">4 Steps (1hr)</option>
-              <option value="8">8 Steps (2hr)</option>
-              <option value="24">24 Steps (6hr)</option>
+            <select v-model.number="selectedHorizon">
+              <option
+                v-for="option in horizonOptions"
+                :key="`dashboard-${option}`"
+                :value="option"
+              >
+                {{ describeHorizon(option) }}
+              </option>
             </select>
             <button class="btn btn-sm" @click="toggleAutoRefresh">
               {{ autoRefresh ? 'Pause' : 'Auto' }}
@@ -202,7 +205,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Line } from 'vue-chartjs';
 import {
   Chart as ChartJS,
@@ -214,8 +217,16 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import { toIsoLocalString } from '../utils/time';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+const props = defineProps({
+  availableHorizons: {
+    type: Array,
+    default: () => [],
+  },
+});
 
 // Reactive data
 const systemStatus = ref('healthy');
@@ -234,6 +245,32 @@ const diskUsage = ref(45);
 const selectedHorizon = ref(1);
 const autoRefresh = ref(true);
 const alerts = ref([]);
+const horizonOptions = computed(() => {
+  const base = Array.isArray(props.availableHorizons) ? props.availableHorizons : [];
+  const filtered = base.filter((value) => Number.isInteger(value) && value > 0);
+  if (filtered.length) {
+    return [...new Set(filtered)].sort((a, b) => a - b);
+  }
+  return [1];
+});
+const describeHorizon = (value) => {
+  const minutes = value * 15;
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${value} Step${value > 1 ? 's' : ''} (${hours}hr${hours > 1 ? 's' : ''})`;
+  }
+  return `${value} Step${value > 1 ? 's' : ''} (${minutes}min)`;
+};
+
+watch(
+  horizonOptions,
+  (options) => {
+    if (!options.includes(selectedHorizon.value)) {
+      selectedHorizon.value = options[0];
+    }
+  },
+  { immediate: true },
+);
 
 // Chart data
 const chartData = ref({
@@ -385,7 +422,7 @@ const updateForecast = async () => {
     
     for (let i = 0; i < selectedHorizon.value; i++) {
       const time = new Date(now.getTime() + i * 15 * 60000);
-      labels.push(time.toLocaleTimeString());
+      labels.push(toIsoLocalString(time));
       predictions.push(data.prediction_wh);
       
       if (data.confidence_interval) {
@@ -416,6 +453,10 @@ const updateForecast = async () => {
     addAlert('error', 'Forecast Update Failed', 'Unable to generate new forecast');
   }
 };
+
+watch(selectedHorizon, () => {
+  updateForecast();
+});
 
 const refreshMonitoring = async () => {
   try {
@@ -465,7 +506,7 @@ const formatUptime = (seconds) => {
 };
 
 const formatTime = (timestamp) => {
-  return new Date(timestamp).toLocaleTimeString();
+  return toIsoLocalString(timestamp) || timestamp;
 };
 
 // Feature actions
@@ -506,4 +547,3 @@ onUnmounted(() => {
   }
 });
 </script>
-

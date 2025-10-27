@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Iterable, List, Optional
 
 import numpy as np
@@ -12,6 +13,22 @@ DEFAULT_LAGS: tuple[int, ...] = (1, 4, 8, 16, 24)
 DEFAULT_ROLL_WINDOWS: tuple[int, ...] = (4, 8, 16, 32)
 
 
+ISO_PATTERN = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}')
+
+
+def _should_override_dayfirst(series: pd.Series) -> bool:
+    if series.empty:
+        return False
+    for value in series:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            continue
+        text = str(value)
+        if ISO_PATTERN.match(text):
+            return True
+        break
+    return False
+
+
 def _parse_time_column(
     series: pd.Series,
     *,
@@ -19,7 +36,9 @@ def _parse_time_column(
     dayfirst: bool = True,
 ) -> pd.Series:
     """Parse timestamps while enforcing a consistent tz-naive UTC reference."""
-    converted = pd.to_datetime(series, errors=errors, dayfirst=dayfirst, utc=True)
+    override_dayfirst = _should_override_dayfirst(series)
+    effective_dayfirst = False if override_dayfirst else dayfirst
+    converted = pd.to_datetime(series, errors=errors, dayfirst=effective_dayfirst, utc=True)
     if not isinstance(converted, pd.Series):
         converted = pd.Series(converted, index=series.index)
     if getattr(converted.dt, 'tz', None) is not None:

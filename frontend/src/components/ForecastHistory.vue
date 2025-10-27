@@ -50,6 +50,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { toIsoLocalString } from '../utils/time';
 
 const props = defineProps({
   history: {
@@ -64,13 +65,6 @@ const numberFormatter = new Intl.NumberFormat('en', {
   maximumFractionDigits: 1,
 });
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-});
-
 const formatWh = (value) => {
   if (!Number.isFinite(value)) return '–';
   return `${numberFormatter.format(value)} Wh`;
@@ -78,9 +72,8 @@ const formatWh = (value) => {
 
 const formatTimestamp = (value) => {
   if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return dateFormatter.format(parsed);
+  const iso = toIsoLocalString(value);
+  return iso || value;
 };
 
 const items = computed(() =>

@@ -252,6 +252,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { toIsoLocalString } from '../utils/time';
 
 // Reactive data
 const dataQuality = ref({
@@ -318,7 +319,7 @@ const getQualityScoreClass = (score) => {
 };
 
 const formatDate = (date) => {
-  return new Date(date).toLocaleString();
+  return toIsoLocalString(date) || date;
 };
 
 const formatFileSize = (bytes) => {

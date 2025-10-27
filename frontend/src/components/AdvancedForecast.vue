@@ -9,6 +9,7 @@
       <div class="config-panel">
         <ForecastConfigPanel
           :horizon="config.horizon"
+          :horizon-options="horizonOptions"
           :include-confidence="config.includeConfidence"
           :ensemble-mode="config.ensembleMode"
           :scenario-count="config.scenarioCount"
@@ -50,6 +51,13 @@ import ScenarioList from './advanced/ScenarioList.vue';
 import ResultsPanel from './advanced/ResultsPanel.vue';
 import ExportActions from './advanced/ExportActions.vue';
 
+const props = defineProps({
+  availableHorizons: {
+    type: Array,
+    default: () => [],
+  },
+});
+
 const loading = ref(false);
 const results = ref([]);
 const modelUsed = ref('');
@@ -72,6 +80,24 @@ const scenarioTemplates = [
 const weatherScenarios = ref(scenarioTemplates.map((template) => ({ ...template })));
 
 const activeScenarios = computed(() => weatherScenarios.value.slice(0, config.scenarioCount));
+const horizonOptions = computed(() => {
+  const base = Array.isArray(props.availableHorizons) ? props.availableHorizons : [];
+  const filtered = base.filter((value) => Number.isInteger(value) && value > 0);
+  if (filtered.length) {
+    return [...new Set(filtered)].sort((a, b) => a - b);
+  }
+  return [1];
+});
+
+watch(
+  horizonOptions,
+  (options) => {
+    if (!options.includes(config.horizon)) {
+      config.horizon = options[0];
+    }
+  },
+  { immediate: true },
+);
 
 const latestRequestId = ref(0);
 
@@ -79,6 +105,34 @@ const cloneResult = (item) => ({
   ...item,
   confidence_interval: item.confidence_interval ? { ...item.confidence_interval } : undefined,
 });
+
+const buildSingleSeries = (baseResult, horizon) => {
+  const anchor = baseResult.timestamp ? new Date(baseResult.timestamp) : new Date();
+  return Array.from({ length: horizon }, (_, idx) => {
+    const timestamp = new Date(anchor.getTime() + idx * 15 * 60000).toISOString();
+    return cloneResult({
+      ...baseResult,
+      timestamp,
+      step_index: idx + 1,
+    });
+  });
+};
+
+const sortScenarioResults = (results) => {
+  return results
+    .slice()
+    .sort((a, b) => {
+      const scenarioCompare = (a.scenario_name || '').localeCompare(b.scenario_name || '');
+      if (scenarioCompare !== 0) return scenarioCompare;
+      const stepA = a.step_index ?? 0;
+      const stepB = b.step_index ?? 0;
+      if (stepA !== stepB) return stepA - stepB;
+      const timeA = a.timestamp || '';
+      const timeB = b.timestamp || '';
+      if (timeA && timeB) return timeA.localeCompare(timeB);
+      return 0;
+    });
+};
 
 const updateScenarioValue = ({ index, key, value }) => {
   if (!weatherScenarios.value[index]) {
@@ -113,7 +167,7 @@ const generateForecast = async () => {
 
       const data = await response.json();
       if (latestRequestId.value !== requestId) return;
-      results.value = Array.from({ length: config.horizon }, () => cloneResult(data));
+      results.value = buildSingleSeries(data, config.horizon);
       modelUsed.value = data.model_used || 'lightgbm';
     } else {
       const scenarios = activeScenarios.value.map((scenario) => ({
@@ -130,6 +184,8 @@ const generateForecast = async () => {
         body: JSON.stringify({
           weather_scenarios: scenarios,
           horizon: config.horizon,
+          include_confidence: config.includeConfidence,
+          ensemble_mode: config.ensembleMode,
         }),
       });
 
@@ -139,7 +195,7 @@ const generateForecast = async () => {
 
       const data = await response.json();
       if (latestRequestId.value !== requestId) return;
-      results.value = data.map(cloneResult);
+      results.value = sortScenarioResults(data.map(cloneResult));
       modelUsed.value = 'ensemble';
     }
   } catch (error) {

@@ -20,6 +20,7 @@ class HistoryPoint(BaseModel):
 
 
 class BatchForecastRequest(BaseModel):
+    horizon: Optional[int] = Field(None, description="Desired model horizon in 15-minute steps")
     history: Optional[List[dict]] = None
     future_weather: Optional[List[dict]] = None
     timestamps: Optional[List[str]] = None
@@ -29,7 +30,9 @@ class ForecastResponse(BaseModel):
     prediction_wh: float
     horizon_steps: int
     timestamp: Optional[str] = None
+    scenario_id: Optional[int] = None
     scenario_name: Optional[str] = None
+    step_index: Optional[int] = Field(None, description="1-based index within the horizon window")
     leaf_indices: Optional[list] = None
     confidence_interval: Optional[Dict[str, float]] = None
 
@@ -44,6 +47,8 @@ class AdvancedForecastRequest(BaseModel):
 class ScenarioForecastRequest(BaseModel):
     horizon: int = Field(1, description="Number of 15-minute steps ahead to forecast")
     weather_scenarios: List[Dict[str, Any]]
+    include_confidence: bool = Field(False, description="Include confidence intervals in scenario results")
+    ensemble_mode: bool = Field(False, description="Use ensemble predictions for scenario forecasts")
 
 
 class MetricsResponse(BaseModel):
@@ -52,6 +57,7 @@ class MetricsResponse(BaseModel):
     rmse: float
     r2_score: Optional[float] = None
     mape: Optional[float] = None
+    available_horizons: List[int] = Field(default_factory=list)
 
 
 class SystemHealthResponse(BaseModel):

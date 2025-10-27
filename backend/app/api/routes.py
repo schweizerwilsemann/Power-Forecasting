@@ -106,6 +106,8 @@ def forecast_scenarios(
         results = advanced_forecasting.forecast_multiple_scenarios(
             payload.weather_scenarios,
             payload.horizon,
+            include_confidence=payload.include_confidence,
+            ensemble_mode=payload.ensemble_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

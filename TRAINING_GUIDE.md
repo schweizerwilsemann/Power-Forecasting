@@ -24,6 +24,10 @@ python -m app.train_model \
 
 Mặc định horizon = 1 tương đương dự báo sản lượng của 15 phút kế tiếp. Có thể tăng `--horizon` để dự báo xa hơn (mỗi bước = 15 phút).
 
+> **Huấn luyện nhiều horizon**: dùng `--horizons` để chạy hàng loạt, ví dụ  
+> `python -m app.train_model --data ../Renewable.csv --horizons 1 4 8 24 48`.  
+> Script sẽ sinh `model_h{n}.joblib` và `metrics_h{n}.json` tương ứng (riêng horizon 1 vẫn tạo thêm `model.joblib`, `metrics.json` để giữ tương thích).
+
 ### Tham số CLI
 
 | Tham số | Mặc định | Ý nghĩa |
@@ -134,7 +138,7 @@ npm run dev
 ### 7.2 Tab Dashboard (`frontend/src/components/Dashboard.vue`)
 - **Điều khiển chính**
   - `Refresh`: gọi đồng thời `/monitoring/health`, `/data/quality`, `/metrics`, sau đó cập nhật biểu đồ realtime.
-  - `Horizon select`: 1/4/8/24 bước (≈15 phút → 6h); giá trị gởi tới `/forecast/advanced`.
+  - `Horizon select`: danh sách được backend trả về (`available_horizons` trong `/metrics`); mỗi giá trị là số bước 15 phút hợp lệ.
   - `Auto/Pause`: bật tắt cron 30s để làm mới số liệu; nên tắt khi cần kiểm tra thủ công.
   - `System Monitoring Refresh`: cập nhật riêng CPU/Memory/Disk từ `/monitoring/performance`.
 - **Outputs cần đọc**
@@ -145,11 +149,14 @@ npm run dev
 ### 7.3 Tab Basic Forecast – Inputs (`frontend/src/components/ForecastForm.vue`)
 | Chế độ | Trường | Mô tả | API đích |
 | --- | --- | --- | --- |
-| Immediate (`mode = 'next'`) | `Horizon (steps)` | Số bước 15 phút; ánh xạ `payload.horizon`. | `/forecast/next` |
+| Immediate (`mode = 'next'`) | `Horizon (steps)` | Dropdown theo `available_horizons`; ánh xạ `payload.horizon`. | `/forecast/next` |
 |  | `Include tree leaf indices` | Boolean `includeComponents`; bật để nhận thêm `leaf_indices`. | `/forecast/next` |
-| Batch (`mode = 'batch'`) | `futureCsv` textarea | Block CSV gồm header + dữ liệu phù hợp `Renewable.csv`; script chuẩn hóa alias (`timestamp` → `Time`, `energy` → `Energy delta[Wh]`, …). | `/forecast/batch` |
+| Batch (`mode = 'batch'`) | `Horizon (steps)` | Cùng danh sách dropdown; dùng để chọn đúng mô hình khi gửi block thời tiết tương lai. | `/forecast/batch` |
+|  | `futureCsv` textarea | Block CSV gồm header + dữ liệu phù hợp `Renewable.csv`; script chuẩn hóa alias (`timestamp` → `Time`, `energy` → `Energy delta[Wh]`, …). | `/forecast/batch` |
 |  | `timestamps override` | Danh sách `ISO8601` dùng nếu muốn ép nhãn thời gian. | `/forecast/batch` |
 |  | `Insert sample data` | Nút điền mẫu 3 hàng để người dùng chỉnh sửa. | – |
+
+- **Chuẩn hóa thời gian**: mọi timestamp hiển thị và trích xuất đều được chuyển về dạng `YYYY-MM-DDTHH:MM:SS` (ví dụ `2024-10-01T08:00:00`). Frontend sẽ tự chuẩn hóa dữ liệu trả về từ backend hoặc người dùng nhập vào.
 
 - **Validation flow**: frontend tự loại dòng rỗng, convert số → `Number`, chuỗi trống → `null`. Thiếu cột `Time` hoặc không có hàng ➝ cảnh báo; backend tiếp tục kiểm schema chi tiết.
 - **History**: mỗi lần chạy sẽ ghi nhận trong `ForecastHistory` gồm mode, số bước, tổng Wh, range timestamp để người dùng khôi phục.
@@ -162,7 +169,7 @@ npm run dev
 
 ### 7.5 Tab Advanced Forecast (`frontend/src/components/AdvancedForecast.vue`)
 - **Inputs**
-  - `Forecast Horizon`: select 1/4/8/24/48 bước → gửi `horizon`.
+  - `Forecast Horizon`: dropdown lấy từ `available_horizons`; chỉ cho phép chạy những horizon đã có artefact.
   - `Include Confidence Intervals`: toggle `include_confidence`.
   - `Use Ensemble Models`: bật `ensemble_mode`; nên dùng khi muốn ổn định hơn đổi lấy thời gian phản hồi.
   - `Weather Scenarios`: 1,3,5. Khi >1, `ScenarioList` hiển thị từng scenario có tham số `ghi`, `temp`, `clouds`, `windSpeed`. Người dùng có thể chỉnh để mô phỏng điều kiện thời tiết.

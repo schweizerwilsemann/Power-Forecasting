@@ -33,7 +33,26 @@
       <div v-if="mode === 'next'" class="form-row two-column">
         <div>
           <label for="horizon">Horizon (steps)</label>
-          <input id="horizon" type="number" min="1" v-model.number="singleParams.horizon" />
+          <select
+            v-if="sanitizedHorizonOptions.length"
+            id="horizon"
+            v-model.number="singleParams.horizon"
+          >
+            <option
+              v-for="option in sanitizedHorizonOptions"
+              :key="option"
+              :value="option"
+            >
+              {{ describeHorizon(option) }}
+            </option>
+          </select>
+          <input
+            v-else
+            id="horizon"
+            type="number"
+            min="1"
+            v-model.number="singleParams.horizon"
+          />
           <small class="helper">Each step equals 15 minutes.</small>
         </div>
         <div>
@@ -50,6 +69,32 @@
           Paste future weather rows (CSV header + rows) matching <code>Renewable.csv</code>. We will normalize
           common column aliases for you.
         </p>
+        <div class="form-row two-column">
+          <div>
+            <label for="batch-horizon">Horizon (steps)</label>
+            <select
+              v-if="sanitizedHorizonOptions.length"
+              id="batch-horizon"
+              v-model.number="batchParams.horizon"
+            >
+              <option
+                v-for="option in sanitizedHorizonOptions"
+                :key="`batch-${option}`"
+                :value="option"
+              >
+                {{ describeHorizon(option) }}
+              </option>
+            </select>
+            <input
+              v-else
+              id="batch-horizon"
+              type="number"
+              min="1"
+              v-model.number="batchParams.horizon"
+            />
+            <small class="helper">Each step equals 15 minutes.</small>
+          </div>
+        </div>
         <button class="link-button" type="button" @click="loadSampleData">
           Need a template? Insert sample data
         </button>
@@ -85,17 +130,33 @@ import { computed, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
   loading: { type: Boolean, default: false },
+  horizonOptions: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['forecast']);
 const mode = ref('next');
 
+const sanitizedHorizonOptions = computed(() => {
+  const base = Array.isArray(props.horizonOptions) ? props.horizonOptions : [];
+  const filtered = base.filter((value) => Number.isInteger(value) && value > 0);
+  if (filtered.length) {
+    return [...new Set(filtered)].sort((a, b) => a - b);
+  }
+  return [1];
+});
+
+const selectDefaultHorizon = () => sanitizedHorizonOptions.value[0];
+
 const singleParams = reactive({
-  horizon: 1,
+  horizon: selectDefaultHorizon(),
   includeComponents: false,
 });
 
 const batchParams = reactive({
+  horizon: selectDefaultHorizon(),
   futureCsv: '',
   timestamps: '',
 });
@@ -110,6 +171,8 @@ const loadSampleData = () => {
   batchParams.timestamps = '';
 };
 
+const describeHorizon = (value) => `${value} steps (${value * 15} min)`;
+
 watch(
   () => mode.value,
   () => {
@@ -118,6 +181,18 @@ watch(
   },
 );
 
+watch(
+  sanitizedHorizonOptions,
+  (options) => {
+    if (!options.includes(singleParams.horizon)) {
+      singleParams.horizon = options[0];
+    }
+    if (!options.includes(batchParams.horizon)) {
+      batchParams.horizon = options[0];
+    }
+  },
+  { immediate: true },
+);
 const parsedBatchPayload = computed(() => {
   const block = batchParams.futureCsv.trim();
   if (!block) return null;
@@ -205,6 +280,7 @@ const handleSubmit = () => {
   emit('forecast', {
     mode: 'batch',
     payload: {
+      horizon: batchParams.horizon,
       future_weather: parsedBatchPayload.value,
       timestamps: batchParams.timestamps
         ? batchParams.timestamps.split(',').map((item) => item.trim())

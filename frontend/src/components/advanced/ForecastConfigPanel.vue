@@ -5,11 +5,13 @@
     <div class="form-group">
       <label for="horizon">Forecast Horizon</label>
       <select id="horizon" v-model.number="horizonModel">
-        <option :value="1">1 Step (15 minutes)</option>
-        <option :value="4">4 Steps (1 hour)</option>
-        <option :value="8">8 Steps (2 hours)</option>
-        <option :value="24">24 Steps (6 hours)</option>
-        <option :value="48">48 Steps (12 hours)</option>
+        <option
+          v-for="option in normalizedHorizonOptions"
+          :key="`config-${option}`"
+          :value="option"
+        >
+          {{ formatOption(option) }}
+        </option>
       </select>
     </div>
 
@@ -53,6 +55,10 @@ import { computed } from 'vue';
 
 const props = defineProps({
   horizon: { type: Number, required: true },
+  horizonOptions: {
+    type: Array,
+    default: () => [1, 4, 8, 24, 48],
+  },
   includeConfidence: { type: Boolean, required: true },
   ensembleMode: { type: Boolean, required: true },
   scenarioCount: { type: Number, required: true },
@@ -86,4 +92,22 @@ const scenarioCountModel = computed({
   get: () => props.scenarioCount,
   set: (value) => emit('update:scenarioCount', Number(value)),
 });
+
+const normalizedHorizonOptions = computed(() => {
+  const base = Array.isArray(props.horizonOptions) ? props.horizonOptions : [];
+  const filtered = base.filter((value) => Number.isInteger(value) && value > 0);
+  if (filtered.length) {
+    return [...new Set(filtered)].sort((a, b) => a - b);
+  }
+  return [1, 4, 8, 24, 48];
+});
+
+const formatOption = (value) => {
+  const minutes = value * 15;
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${value} Step${value > 1 ? 's' : ''} (${hours}hr${hours > 1 ? 's' : ''})`;
+  }
+  return `${value} Step${value > 1 ? 's' : ''} (${minutes}min)`;
+};
 </script>

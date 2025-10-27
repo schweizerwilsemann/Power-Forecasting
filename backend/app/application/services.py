@@ -21,18 +21,16 @@ class ForecastingService:
         self._history_gateway = history_gateway
         self._feature_engineer = feature_engineer
 
-    def model_ready(self) -> bool:
-        return self._model_gateway.is_ready()
+    def model_ready(self, horizon: Optional[int] = None) -> bool:
+        return self._model_gateway.is_ready(horizon)
 
-    def _load_state(self) -> ModelState:
-        if not self.model_ready():
+    def _load_state(self, horizon: Optional[int] = None) -> ModelState:
+        if not self.model_ready(horizon):
             raise ModelNotReadyError('Model artifacts not available')
-        return self._model_gateway.get_state()
+        return self._model_gateway.get_state(horizon)
 
     def forecast_next(self, horizon: Optional[int], include_components: bool) -> Dict[str, Any]:
-        state = self._load_state()
-        if horizon and horizon != state.horizon:
-            raise ValueError(f'Model supports horizon={state.horizon}, received {horizon}.')
+        state = self._load_state(horizon)
 
         history_df = self._history_gateway.load(limit=self._feature_engineer.history_window)
         if history_df.empty:
@@ -52,7 +50,8 @@ class ForecastingService:
         return response
 
     def forecast_batch(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-        state = self._load_state()
+        horizon = payload.pop('horizon', None)
+        state = self._load_state(horizon)
 
         history_payload = payload.get('history')
         if history_payload:
@@ -105,4 +104,6 @@ class MetricsService:
         if not self._model_gateway.is_ready():
             raise ModelNotReadyError('Model artifacts not available')
         state = self._model_gateway.get_state()
-        return state.metrics
+        metrics = dict(state.metrics)
+        metrics['available_horizons'] = self._model_gateway.available_horizons()
+        return metrics

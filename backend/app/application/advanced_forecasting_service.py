@@ -4,7 +4,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.exceptions import NotFittedError
 import pandas as pd
 
 from ..domain.interfaces import ModelGateway, HistoryGateway
@@ -18,30 +18,55 @@ class AdvancedForecastingService:
         self.model_gateway = model_gateway
         self.feature_engineer = feature_engineer
         self.history_gateway = history_gateway
-        self.ensemble_models = {}
-        self._initialize_ensemble_models()
+        self._ensemble_registry: dict[int, dict[str, Any]] = {}
     
-    def _initialize_ensemble_models(self):
-        """Initialize ensemble models for improved forecasting."""
-        # LightGBM (primary model)
-        self.ensemble_models['lightgbm'] = self.model_gateway.get_state().model
-        
-        # Random Forest (secondary model)
-        self.ensemble_models['random_forest'] = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=10,
-            random_state=42
-        )
-        
-        # Train ensemble models if not already trained
-        # In production, these would be pre-trained and loaded
-        self._train_ensemble_models()
+    def _current_timestamp(self) -> str:
+        return datetime.utcnow().replace(microsecond=0).isoformat()
     
-    def _train_ensemble_models(self):
-        """Train ensemble models on historical data."""
-        # This is a simplified version - in production, you'd load pre-trained models
-        # or train them on a larger dataset
-        pass
+    def _load_state(self, horizon: int) -> Any:
+        return self.model_gateway.get_state(horizon)
+    
+    def _latest_feature_frame(self, state):
+        historical_data = self.history_gateway.load(limit=self.feature_engineer.history_window)
+        if historical_data.empty:
+            raise ValueError("No historical data available")
+        
+        prepared_history = self.feature_engineer.normalise_history(historical_data)
+        feature_frame = self.feature_engineer.features_from_history(prepared_history, state)
+        return feature_frame, prepared_history
+
+    def _train_random_forest(self, horizon: int, target_features: list[str]) -> Optional[RandomForestRegressor]:
+        try:
+            dataset = self.history_gateway.load()
+            if dataset.empty:
+                return None
+            frame = self.feature_engineer.make_features(dataset, horizon=horizon)
+            feature_cols = [c for c in frame.columns if c not in {'energy_wh', 'target'}]
+            intersecting = [col for col in target_features if col in frame.columns]
+            if not intersecting:
+                return None
+            model = RandomForestRegressor(
+                n_estimators=200,
+                max_depth=12,
+                min_samples_split=4,
+                random_state=42,
+                n_jobs=-1,
+            )
+            model.fit(frame[intersecting], frame['target'])
+            return model
+        except Exception as exc:
+            print(f'Warning: failed to train random forest ensemble for horizon={horizon}: {exc}')
+            return None
+
+    def _get_ensemble_models(self, horizon: int, state) -> dict[str, Any]:
+        if horizon in self._ensemble_registry:
+            return self._ensemble_registry[horizon]
+        models = {'lightgbm': state.model}
+        rf_model = self._train_random_forest(horizon, state.features)
+        if rf_model is not None:
+            models['random_forest'] = rf_model
+        self._ensemble_registry[horizon] = models
+        return models
     
     def forecast_with_confidence(
         self, 
@@ -60,34 +85,21 @@ class AdvancedForecastingService:
     
     def _single_model_forecast(self, horizon: int, include_confidence: bool) -> Dict[str, Any]:
         """Generate forecast using single model."""
-        # Get historical data
-        historical_data = self.history_gateway.load()
-        if historical_data.empty:
-            raise ValueError("No historical data available")
+        state = self._load_state(horizon)
+        latest_features, prepared_history = self._latest_feature_frame(state)
         
-        # Prepare features
-        features = self.feature_engineer.make_features(historical_data)
-        if features.empty:
-            raise ValueError("Feature engineering failed")
-        
-        # Get the latest features for prediction
-        latest_features = features.iloc[-1:].drop(['energy_wh', 'target'], axis=1, errors='ignore')
-        
-        # Make prediction
-        model = self.model_gateway.get_state().model
-        prediction = model.predict(latest_features)[0]
+        prediction = state.model.predict(latest_features)[0]
         
         result = {
             "prediction_wh": float(prediction),
-            "horizon_steps": horizon,
-            "timestamp": datetime.now().isoformat(),
+            "horizon_steps": state.horizon,
+            "timestamp": self._current_timestamp(),
             "model_used": "lightgbm"
         }
         
         if include_confidence:
-            # Calculate confidence interval using historical prediction errors
             confidence_interval = self._calculate_confidence_interval(
-                prediction, historical_data, model, latest_features
+                prediction, prepared_history, state
             )
             result["confidence_interval"] = confidence_interval
         
@@ -95,49 +107,37 @@ class AdvancedForecastingService:
     
     def _ensemble_forecast(self, horizon: int, include_confidence: bool) -> Dict[str, Any]:
         """Generate forecast using ensemble of models."""
-        # Get historical data
-        historical_data = self.history_gateway.load()
-        if historical_data.empty:
-            raise ValueError("No historical data available")
+        state = self._load_state(horizon)
+        latest_features, prepared_history = self._latest_feature_frame(state)
+        models = self._get_ensemble_models(horizon, state)
         
-        # Prepare features
-        features = self.feature_engineer.make_features(historical_data)
-        if features.empty:
-            raise ValueError("Feature engineering failed")
-        
-        # Get the latest features for prediction
-        latest_features = features.iloc[-1:].drop(['energy_wh', 'target'], axis=1, errors='ignore')
-        
-        # Get predictions from all models
         predictions = {}
-        for name, model in self.ensemble_models.items():
+        for name, model in models.items():
             try:
                 pred = model.predict(latest_features)[0]
                 predictions[name] = float(pred)
-            except Exception as e:
-                print(f"Warning: Model {name} failed: {e}")
+            except NotFittedError:
                 continue
         
         if not predictions:
             raise ValueError("All ensemble models failed")
         
-        # Calculate ensemble prediction (weighted average)
-        weights = {'lightgbm': 0.7, 'random_forest': 0.3}  # Adjust based on model performance
+        weights = {'lightgbm': 0.7, 'random_forest': 0.3}
+        total_weight = sum(weights.get(name, 0.1) for name in predictions.keys())
         ensemble_prediction = sum(
-            predictions[name] * weights.get(name, 0.1) 
+            predictions[name] * weights.get(name, 0.1)
             for name in predictions.keys()
-        ) / sum(weights.get(name, 0.1) for name in predictions.keys())
+        ) / total_weight
         
         result = {
             "prediction_wh": float(ensemble_prediction),
-            "horizon_steps": horizon,
-            "timestamp": datetime.now().isoformat(),
+            "horizon_steps": state.horizon,
+            "timestamp": self._current_timestamp(),
             "model_used": "ensemble",
             "individual_predictions": predictions
         }
         
         if include_confidence:
-            # Calculate confidence based on prediction variance
             pred_values = list(predictions.values())
             pred_std = np.std(pred_values)
             confidence_interval = {
@@ -153,8 +153,7 @@ class AdvancedForecastingService:
         self, 
         prediction: float, 
         historical_data: Any, 
-        model: Any, 
-        features: Any
+        state: Any
     ) -> Dict[str, float]:
         """Calculate confidence interval for prediction."""
         try:
@@ -172,7 +171,7 @@ class AdvancedForecastingService:
                 }
             
             # Calculate historical prediction errors
-            historical_features = self.feature_engineer.make_features(recent_data)
+            historical_features = self.feature_engineer.make_features(recent_data, horizon=state.horizon)
             if historical_features.empty:
                 return {
                     "lower": float(prediction * 0.8),
@@ -182,7 +181,7 @@ class AdvancedForecastingService:
             
             # Get predictions for historical data
             hist_features = historical_features.drop(['energy_wh', 'target'], axis=1, errors='ignore')
-            hist_predictions = model.predict(hist_features)
+            hist_predictions = state.model.predict(hist_features)
             
             # Calculate errors
             actuals = historical_features['target'].values
@@ -206,9 +205,11 @@ class AdvancedForecastingService:
             }
     
     def forecast_multiple_scenarios(
-        self, 
-        weather_scenarios: List[Dict[str, Any]], 
-        horizon: int = 1
+        self,
+        weather_scenarios: List[Dict[str, Any]],
+        horizon: int = 1,
+        include_confidence: bool = False,
+        ensemble_mode: bool = False,
     ) -> List[Dict[str, Any]]:
         """Generate forecasts for multiple weather scenarios."""
         historical_data = self.history_gateway.load()
@@ -216,7 +217,7 @@ class AdvancedForecastingService:
             raise ValueError("No historical data available for scenario forecasting")
 
         prepared_history = self.feature_engineer.normalise_history(historical_data)
-        state = self.model_gateway.get_state()
+        state = self._load_state(horizon)
 
         base_time = prepared_history['Time'].max()
         if pd.isna(base_time):
@@ -225,10 +226,26 @@ class AdvancedForecastingService:
         results: List[Dict[str, Any]] = []
         freq = pd.to_timedelta(15, unit='m')
 
+        base_models = None
+        if ensemble_mode:
+            base_models = self._get_ensemble_models(state.horizon, state)
+        else:
+            base_models = {'lightgbm': state.model}
+        weights = {'lightgbm': 0.7, 'random_forest': 0.3}
+        total_weight = sum(weights.get(name, 0.1) for name in base_models.keys())
+
+        confidence_template = None
+        if include_confidence and not ensemble_mode:
+            confidence_template = self._calculate_confidence_interval(
+                state.model.predict(self.feature_engineer.features_from_history(prepared_history, state))[-1],
+                prepared_history,
+                state,
+            )
+
         for i, scenario in enumerate(weather_scenarios):
             try:
                 future_rows: List[Dict[str, Any]] = []
-                for step in range(max(horizon, 1)):
+                for step in range(max(state.horizon, 1)):
                     target_time = base_time + freq * (step + 1)
                     row: Dict[str, Any] = {'Time': target_time.isoformat()}
                     for key, value in scenario.items():
@@ -245,23 +262,58 @@ class AdvancedForecastingService:
                     future_df,
                     state,
                 )
-                preds = state.model.predict(feature_block)
+                lightgbm_preds = state.model.predict(feature_block)
+                ensemble_preds = lightgbm_preds
+                per_model_predictions = {'lightgbm': lightgbm_preds}
+
+                if ensemble_mode:
+                    summed = np.zeros_like(lightgbm_preds, dtype=float)
+                    for name, model in base_models.items():
+                        try:
+                            preds = model.predict(feature_block)
+                            per_model_predictions[name] = preds
+                            summed += preds * weights.get(name, 0.1)
+                        except Exception as exc:
+                            print(f'Warning: Ensemble model {name} failed during scenario forecasting: {exc}')
+                    ensemble_preds = summed / total_weight if total_weight else lightgbm_preds
+                else:
+                    ensemble_preds = lightgbm_preds
+
                 scenario_timestamps = self.feature_engineer.extract_timestamps(future_df)
 
-                results.append({
-                    "scenario_id": i,
-                    "scenario_name": scenario.get('name', f'Scenario {i+1}'),
-                    "prediction_wh": float(preds[0]),
-                    "horizon_steps": state.horizon,
-                    "timestamp": scenario_timestamps[0] if scenario_timestamps else None,
-                    "weather_conditions": scenario
-                })
+                for step_idx, pred in enumerate(ensemble_preds):
+                    timestamp = (
+                        scenario_timestamps[step_idx]
+                        if step_idx < len(scenario_timestamps)
+                        else self._current_timestamp()
+                    )
+                    record: Dict[str, Any] = {
+                        "scenario_id": i,
+                        "scenario_name": scenario.get('name', f'Scenario {i+1}'),
+                        "prediction_wh": float(pred),
+                        "horizon_steps": state.horizon,
+                        "timestamp": timestamp,
+                        "weather_conditions": scenario,
+                        "step_index": step_idx + 1,
+                    }
+                    if include_confidence:
+                        if ensemble_mode:
+                            candidate = [per_model_predictions[name][step_idx] for name in per_model_predictions]
+                            pred_std = float(np.std(candidate))
+                            record["confidence_interval"] = {
+                                "lower": float(pred - 1.96 * pred_std),
+                                "upper": float(pred + 1.96 * pred_std),
+                                "std": pred_std,
+                            }
+                        elif confidence_template:
+                            record["confidence_interval"] = confidence_template
+                    results.append(record)
             except Exception as e:
                 results.append({
                     "scenario_id": i,
                     "scenario_name": scenario.get('name', f'Scenario {i+1}'),
                     "error": str(e),
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": self._current_timestamp()
                 })
 
         return results
