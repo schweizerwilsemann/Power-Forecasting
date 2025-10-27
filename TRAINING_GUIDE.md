@@ -82,6 +82,26 @@ print(state["horizon"], len(state["features"]))
 
 > **Mẹo đọc nhanh:** So sánh `mae` với sản lượng trung bình giờ cao điểm để đánh giá ý nghĩa. Ví dụ: nếu trung bình giờ cao điểm 3000 Wh mà MAE 120 Wh thì sai số ~4%.
 
+### 4.1 Cách đọc năng lượng/thời tiết
+
+| Thuật ngữ | Định nghĩa thân thiện | Cách sử dụng |
+| --- | --- | --- |
+| `prediction_wh` | Điện năng dự đoán trong 15 phút tới tính bằng Wh (watt-hour). Nghĩ như lượng pin sạc được trong một “ô thời gian”. | Dùng để biết sản lượng kỳ vọng từng bước; tổng các bước = năng lượng của cả cửa sổ dự báo. |
+| `horizon` | Số bước 15 phút mà mô hình nhìn về phía trước (ví dụ `horizon=4` ≈ 1 giờ). | Chọn nhỏ khi cần phản ứng nhanh; chọn lớn để có bức tranh dài hơi (đổi lại độ chính xác giảm). |
+| `confidence_interval.upper/lower` | Hai biên thể hiện phạm vi hợp lý nhất của dự báo (khoảng tin cậy ≈ 95%). | Nếu biên hẹp ➝ mô hình tự tin; biên rộng ➝ dữ liệu nhiễu hoặc thời tiết khó đoán. |
+| `MAE` | Sai số tuyệt đối trung bình, cũng bằng Wh. | Đo trung bình mô hình lệch bao nhiêu Wh mỗi bước; số càng nhỏ càng tốt. |
+| `RMSE` | Sai số bình phương trung bình (Wh), nhạy hơn với sai lệch lớn. | Nếu RMSE cao hơn nhiều so với MAE, nghĩa là tồn tại một vài bước “trượt” mạnh cần điều tra. |
+| `GHI` | “Global Horizontal Irradiance” – cường độ bức xạ mặt trời chiếu lên bề mặt ngang. | Giá trị cao đồng nghĩa trời nắng mạnh; thường kéo `prediction_wh` tăng. |
+| `temp` | Nhiệt độ không khí (°C). | Nhiệt độ quá cao có thể giảm hiệu suất tấm pin; mô hình sẽ cân bằng với các biến khác. |
+| `humidity` | Độ ẩm tương đối (%). | Độ ẩm lớn thường đi kèm mây mù, giảm bức xạ. |
+| `wind_speed` | Tốc độ gió (m/s). | Gió mạnh có thể báo hiệu áp thấp/mây kéo tới, nhưng cũng giúp làm mát tấm pin. |
+| `clouds_all` | Tỷ lệ bầu trời bị mây che (%). | Lượng mây cao ➝ sản lượng giảm; thường tác động mạnh nhất sau `GHI`. |
+| `rain_1h`, `snow_1h` | Lượng mưa/tuyết trong giờ qua (mm). | Cho biết trời âm u; tuyết có thể phủ lên tấm pin. |
+| `sunlightTime`, `SunlightTime/daylength` | Thời gian đã có nắng trong ngày và tỷ lệ so với tổng thời gian ban ngày. | Giúp mô hình biết đang ở giai đoạn nào của ngày (sáng/chiều/tối). |
+| `isSun` | Cờ 0/1 báo mặt trời đang trên đường chân trời. | Khi =0 dự báo thường giảm mạnh vì mặt trời lặn. |
+
+> Chỉ cần nhớ: `prediction_wh` là sản lượng, `horizon` là độ dài dự báo, `MAE/RMSE` là chất lượng, còn các biến thời tiết (GHI, mây, mưa…) mô tả bối cảnh mà mô hình dùng để suy luận.
+
 ## 5. Kiểm Tra Sau Huấn Luyện
 
 1. **Đảm bảo file artefact mới sinh**  
