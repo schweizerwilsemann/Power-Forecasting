@@ -12,6 +12,21 @@ DEFAULT_LAGS: tuple[int, ...] = (1, 4, 8, 16, 24)
 DEFAULT_ROLL_WINDOWS: tuple[int, ...] = (4, 8, 16, 32)
 
 
+def _parse_time_column(
+    series: pd.Series,
+    *,
+    errors: str = 'raise',
+    dayfirst: bool = True,
+) -> pd.Series:
+    """Parse timestamps while enforcing a consistent tz-naive UTC reference."""
+    converted = pd.to_datetime(series, errors=errors, dayfirst=dayfirst, utc=True)
+    if not isinstance(converted, pd.Series):
+        converted = pd.Series(converted, index=series.index)
+    if getattr(converted.dt, 'tz', None) is not None:
+        converted = converted.dt.tz_convert('UTC').dt.tz_localize(None)
+    return converted
+
+
 def make_features(
     raw: pd.DataFrame,
     horizon: int = 1,
@@ -23,7 +38,7 @@ def make_features(
     if 'Time' not in df:
         raise ValueError("Input frame must contain a 'Time' column")
 
-    df['Time'] = pd.to_datetime(df['Time'], dayfirst=True)
+    df['Time'] = _parse_time_column(df['Time'])
     df = df.sort_values('Time').set_index('Time').asfreq('15min')
 
     # Rename to a consistent internal name and clean obvious issues.
@@ -97,7 +112,7 @@ class FeatureEngineer:
         if 'Time' not in history_df:
             raise HistoryNotAvailableError("History requires a 'Time' column")
         frame = history_df.copy()
-        frame['Time'] = pd.to_datetime(frame['Time'], errors='coerce', dayfirst=True)
+        frame['Time'] = _parse_time_column(frame['Time'], errors='coerce')
         frame = frame.dropna(subset=['Time']).sort_values('Time')
         if frame.empty:
             raise HistoryNotAvailableError('No valid timestamps found in history payload')
@@ -107,12 +122,16 @@ class FeatureEngineer:
         if 'Time' not in future_df:
             raise ValueError("future_weather requires a 'Time' column")
         frame = future_df.copy()
-        frame['Time'] = pd.to_datetime(frame['Time'], errors='coerce', dayfirst=True)
+        frame['Time'] = _parse_time_column(frame['Time'], errors='coerce')
         frame = frame.dropna(subset=['Time']).sort_values('Time')
         if frame.empty:
             raise ValueError('No valid timestamps found in future_weather payload')
         return frame
 
+    def make_features(self, data: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
+        """Make features from data using the global make_features function."""
+        return make_features(data, horizon=horizon)
+    
     def features_from_history(self, history_df: pd.DataFrame, state: ModelState) -> pd.DataFrame:
         windowed = history_df.tail(self.history_window)
         feature_frame = make_features(windowed, horizon=state.horizon)

@@ -1,40 +1,81 @@
 <template>
-  <section>
-    <h2>Generate Forecast</h2>
-    <div class="form-row">
-      <label>Mode</label>
-      <select v-model="mode">
-        <option value="next">Next 15-minute step</option>
-        <option value="batch">Batch forecast (future weather)</option>
-      </select>
+  <section class="forecast-form">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Inputs</p>
+        <h2>Generate Forecast</h2>
+      </div>
+      <p class="muted">Switch between a single next step or a batch of weather rows.</p>
     </div>
 
     <form @submit.prevent="handleSubmit">
+      <div class="mode-toggle" role="group" aria-label="Forecast mode">
+        <button
+          type="button"
+          :class="['mode-pill', { active: mode === 'next' }]"
+          :aria-pressed="mode === 'next'"
+          @click="mode = 'next'"
+        >
+          <strong>Immediate</strong>
+          <span>Predict the next horizon</span>
+        </button>
+        <button
+          type="button"
+          :class="['mode-pill', { active: mode === 'batch' }]"
+          :aria-pressed="mode === 'batch'"
+          @click="mode = 'batch'"
+        >
+          <strong>Batch</strong>
+          <span>Upload future weather</span>
+        </button>
+      </div>
+
       <div v-if="mode === 'next'" class="form-row two-column">
         <div>
           <label for="horizon">Horizon (steps)</label>
-            <input id="horizon" type="number" min="1" v-model.number="singleParams.horizon" />
+          <input id="horizon" type="number" min="1" v-model.number="singleParams.horizon" />
+          <small class="helper">Each step equals 15 minutes.</small>
         </div>
         <div>
           <label class="checkbox">
             <input type="checkbox" v-model="singleParams.includeComponents" />
             Include tree leaf indices
           </label>
+          <small class="helper">Surface raw LightGBM decision paths.</small>
         </div>
       </div>
 
-      <div v-else>
-        <p>Paste future weather rows (CSV header + rows) matching Renewable.csv columns.</p>
-        <textarea rows="8" v-model="batchParams.futureCsv" placeholder="Time,Energy delta[Wh],GHI,..."></textarea>
+      <div v-else class="form-stack">
+        <p class="helper">
+          Paste future weather rows (CSV header + rows) matching <code>Renewable.csv</code>. We will normalize
+          common column aliases for you.
+        </p>
+        <button class="link-button" type="button" @click="loadSampleData">
+          Need a template? Insert sample data
+        </button>
+        <textarea
+          rows="8"
+          v-model="batchParams.futureCsv"
+          placeholder="Time,Energy delta[Wh],GHI,..."
+          spellcheck="false"
+        ></textarea>
         <label for="timestamps">Optional timestamps override (comma separated)</label>
-          <input id="timestamps" type="text" v-model="batchParams.timestamps" placeholder="2022-09-01T12:00Z,2022-09-01T12:15Z" />
+        <input
+          id="timestamps"
+          type="text"
+          v-model="batchParams.timestamps"
+          placeholder="2022-09-01T12:00Z,2022-09-01T12:15Z"
+        />
       </div>
 
-      <div style="margin-top: 1rem;">
+      <footer class="form-footer">
+        <div>
+          <p class="muted">The backend validates schema and raises precise errors if columns misalign.</p>
+        </div>
         <button type="submit" :disabled="loading">
           {{ loading ? 'Running...' : 'Forecast' }}
         </button>
-      </div>
+      </footer>
     </form>
   </section>
 </template>
@@ -58,6 +99,16 @@ const batchParams = reactive({
   futureCsv: '',
   timestamps: '',
 });
+
+const SAMPLE_BATCH = `Time,Energy delta[Wh],GHI,temp,pressure,humidity,wind_speed,clouds_all,rain_1h,snow_1h,isSun,sunlightTime,SunlightTime/daylength
+2024-01-10T08:00Z,120,480,18,1013,45,3.1,20,0,0,1,15000,0.62
+2024-01-10T08:15Z,125,512,19,1012,44,3.0,18,0,0,1,15200,0.63
+2024-01-10T08:30Z,140,545,20,1011,42,2.8,15,0,0,1,15420,0.65`;
+
+const loadSampleData = () => {
+  batchParams.futureCsv = SAMPLE_BATCH;
+  batchParams.timestamps = '';
+};
 
 watch(
   () => mode.value,
@@ -163,14 +214,4 @@ const handleSubmit = () => {
 };
 </script>
 
-<style scoped>
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-textarea {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-}
-</style>
-
+<style scoped src="../styles/components/ForecastForm.css"></style>
