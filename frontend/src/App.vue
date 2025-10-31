@@ -10,7 +10,7 @@
           v-for="tab in tabs" 
           :key="tab.id"
           :class="['nav-item', { active: activeTab === tab.id }]"
-          @click="activeTab = tab.id"
+          @click="navigate(tab.id)"
         >
           <i :class="tab.icon"></i>
           {{ tab.name }}
@@ -107,36 +107,17 @@
       <DataQuality v-else-if="activeTab === 'quality'" />
 
       <!-- Historical Analysis Tab -->
-      <div v-else-if="activeTab === 'analysis'" class="analysis-page">
-        <div class="section-header">
-          <h2>Historical Analysis</h2>
-          <p>Analyze historical performance and trends</p>
-        </div>
-        <div class="coming-soon">
-          <div class="coming-soon-icon">📊</div>
-          <h3>Coming Soon</h3>
-          <p>Historical analysis features are under development</p>
-        </div>
-      </div>
+      <HistoricalAnalysis v-else-if="activeTab === 'analysis'" />
 
       <!-- Model Management Tab -->
-      <div v-else-if="activeTab === 'models'" class="models-page">
-        <div class="section-header">
-          <h2>Model Management</h2>
-          <p>Manage and monitor your forecasting models</p>
-        </div>
-        <div class="coming-soon">
-          <div class="coming-soon-icon">🤖</div>
-          <h3>Coming Soon</h3>
-          <p>Model management features are under development</p>
-        </div>
-      </div>
+      <ModelManagement v-else-if="activeTab === 'models'" />
     </main>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import Dashboard from './components/Dashboard.vue';
 import ForecastChart from './components/ForecastChart.vue';
 import ForecastForm from './components/ForecastForm.vue';
@@ -145,13 +126,17 @@ import ForecastInsights from './components/ForecastInsights.vue';
 import ForecastTimeline from './components/ForecastTimeline.vue';
 import AdvancedForecast from './components/AdvancedForecast.vue';
 import DataQuality from './components/DataQuality.vue';
+import HistoricalAnalysis from './components/HistoricalAnalysis.vue';
+import ModelManagement from './components/ModelManagement.vue';
 import { useForecastApi } from './composables/useForecastApi';
 import { normalizeTimestamp, toIsoLocalString } from './utils/time';
 
 const MAX_HISTORY = 5;
 
 // Tab management
-const activeTab = ref('dashboard');
+const router = useRouter();
+const route = useRoute();
+const activeTab = computed(() => route.name ?? 'dashboard');
 const tabs = ref([
   { id: 'dashboard', name: 'Dashboard', icon: 'icon-dashboard' },
   { id: 'forecast', name: 'Basic Forecast', icon: 'icon-chart' },
@@ -297,12 +282,14 @@ const formattedRmse = computed(() =>
   metrics.value?.rmse != null ? metrics.value.rmse.toFixed(1) : '–',
 );
 
-onMounted(async () => {
-  try {
-    metrics.value = await fetchMetrics();
-  } catch (error) {
-    console.warn('Unable to load metrics', error);
+const navigate = (tabId) => {
+  if (tabId !== route.name) {
+    router.push({ name: tabId });
   }
+};
+
+onMounted(async () => {
+  await refreshAll();
 });
 </script>
 

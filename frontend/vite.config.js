@@ -5,14 +5,27 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
-    proxy: {
-      '/monitoring': 'http://localhost:8000',
-      '/data': 'http://localhost:8000',
-      '/metrics': 'http://localhost:8000',
-      '/forecast': 'http://localhost:8000',
-      '/models': 'http://localhost:8000',
-      '/analysis': 'http://localhost:8000',
-      '/health': 'http://localhost:8000'
-    }
+    proxy: [
+      '/monitoring',
+      '/data',
+      '/metrics',
+      '/forecast',
+      '/models',
+      '/analysis',
+      '/health',
+    ].reduce((config, path) => {
+      config[path] = {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          const acceptHeader = req.headers.accept || '';
+          if (acceptHeader.includes('text/html')) {
+            return '/index.html';
+          }
+          return null;
+        }
+      };
+      return config;
+    }, {})
   }
 })

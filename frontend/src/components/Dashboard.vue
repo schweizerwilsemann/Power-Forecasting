@@ -60,7 +60,7 @@
       <div class="metric-card">
         <div class="metric-header">
           <h3>Forecast Accuracy</h3>
-          <span class="metric-value">{{ accuracy }}%</span>
+          <span class="metric-value">{{ accuracyDisplay }}</span>
         </div>
         <div class="metric-details">
           <div class="detail-item">
@@ -236,7 +236,7 @@ const uptime = ref(0);
 const dataQuality = ref(92);
 const dataCompleteness = ref(98);
 const anomalyCount = ref(3);
-const accuracy = ref(87);
+const accuracy = ref(null);
 const mae = ref(45.2);
 const rmse = ref(67.8);
 const cpuUsage = ref(25);
@@ -359,6 +359,10 @@ const qualityStatus = computed(() => {
   if (dataQuality.value >= 90) return 'status-good';
   if (dataQuality.value >= 70) return 'status-warning';
   return 'status-bad';
+});
+
+const accuracyDisplay = computed(() => {
+  return accuracy.value === null ? '--' : `${accuracy.value}%`;
 });
 
 // Methods
