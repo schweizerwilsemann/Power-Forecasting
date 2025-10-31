@@ -6,6 +6,7 @@ from ..application.services import ForecastingService, MetricsService
 from ..application.monitoring_service import MonitoringService
 from ..application.data_quality_service import DataQualityService
 from ..application.advanced_forecasting_service import AdvancedForecastingService
+from ..application.historical_analysis_service import HistoricalAnalysisService
 from ..container import Container
 
 
@@ -35,3 +36,8 @@ def get_data_quality_service() -> DataQualityService:
 def get_advanced_forecasting_service() -> AdvancedForecastingService:
     container = get_container()
     return AdvancedForecastingService(container.model_gateway, container.feature_engineer, container.history_gateway)
+
+
+def get_historical_analysis_service() -> HistoricalAnalysisService:
+    container = get_container()
+    return container.historical_analysis_service

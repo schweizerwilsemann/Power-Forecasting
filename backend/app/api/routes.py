@@ -8,13 +8,15 @@ from ..application.services import ForecastingService, MetricsService
 from ..application.monitoring_service import MonitoringService
 from ..application.data_quality_service import DataQualityService
 from ..application.advanced_forecasting_service import AdvancedForecastingService
+from ..application.historical_analysis_service import HistoricalAnalysisService
 from ..domain.exceptions import HistoryNotAvailableError, ModelNotReadyError
 from .dependencies import (
     get_forecasting_service, 
     get_metrics_service,
     get_monitoring_service,
     get_data_quality_service,
-    get_advanced_forecasting_service
+    get_advanced_forecasting_service,
+    get_historical_analysis_service,
 )
 from .schemas import (
     BatchForecastRequest, 
@@ -183,27 +185,18 @@ def import_data(
 @router.post('/analysis/historical', response_model=HistoricalAnalysisResponse)
 def analyze_historical_performance(
     payload: HistoricalAnalysisRequest,
-    forecasting: ForecastingService = Depends(get_forecasting_service)
+    analysis_service: HistoricalAnalysisService = Depends(get_historical_analysis_service)
 ) -> HistoricalAnalysisResponse:
     try:
-        # This is a simplified implementation
-        # In production, you'd implement proper historical analysis
-        return HistoricalAnalysisResponse(
-            period={
-                "start": payload.start_date,
-                "end": payload.end_date
-            },
-            metrics={
-                "mae": 45.2,
-                "rmse": 67.8,
-                "r2_score": 0.85
-            },
-            data_points=[],
-            trends={
-                "accuracy": "improving",
-                "performance": "stable"
-            }
+        result = analysis_service.analyse(
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            aggregation=payload.aggregation,
+            metrics=payload.metrics,
         )
+        return HistoricalAnalysisResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

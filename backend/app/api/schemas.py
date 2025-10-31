@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PointForecastRequest(BaseModel):
@@ -15,8 +15,7 @@ class HistoryPoint(BaseModel):
     Time: str
     energy: Optional[float] = Field(None, alias="Energy delta[Wh]")
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class BatchForecastRequest(BaseModel):

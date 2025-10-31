@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .application.services import ForecastingService, MetricsService
+from .application.historical_analysis_service import HistoricalAnalysisService
 from .infrastructure.repositories.artifact_model_repository import ArtifactModelRepository
 from .infrastructure.repositories.csv_history_repository import CSVHistoryRepository
 from .infrastructure.services.feature_engineering import FeatureEngineer
@@ -24,3 +25,4 @@ class Container:
         self.feature_engineer = feature_engineer
         self.forecasting_service = ForecastingService(model_gateway, history_gateway, feature_engineer)
         self.metrics_service = MetricsService(model_gateway)
+        self.historical_analysis_service = HistoricalAnalysisService(history_gateway)
