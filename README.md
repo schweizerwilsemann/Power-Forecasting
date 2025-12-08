@@ -112,12 +112,18 @@ python backend/run.py --reload
 python tests/test_enhanced_features.py
 ```
 
+### Dataset Profiling & Baselines
+```bash
+python3 scripts/data_profile.py --csv Renewable.csv
+```
+
 ## 📚 Documentation
 
 - [Enhanced Features](ENHANCED_FEATURES.md) - Chi tiết các tính năng nâng cao
 - [Backend API](backend/README.md) - API documentation
 - [Frontend Guide](frontend/README.md) - Frontend documentation
 - [Test Guide](tests/README.md) - Testing documentation
+- [Project Requirements](PROJECT_REQUIREMENTS.md) - Đối chiếu yêu cầu đồ án & thống kê dữ liệu
 
 ## 🔧 Configuration
 
