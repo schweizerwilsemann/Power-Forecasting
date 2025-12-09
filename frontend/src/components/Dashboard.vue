@@ -59,13 +59,13 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <h3>Forecast Accuracy</h3>
-          <span class="metric-value">{{ accuracyDisplay }}</span>
+          <h3>R2 Score</h3>
+          <span class="metric-value">{{ r2ScoreDisplay }}</span>
         </div>
         <div class="metric-details">
           <div class="detail-item">
-            <span>MAE</span>
-            <span>{{ mae }} Wh</span>
+            <span>Model fit</span>
+            <span>{{ r2ScoreValue }}</span>
           </div>
           <div class="detail-item">
             <span>RMSE</span>
@@ -236,7 +236,7 @@ const uptime = ref(0);
 const dataQuality = ref(92);
 const dataCompleteness = ref(98);
 const anomalyCount = ref(3);
-const accuracy = ref(null);
+const r2Score = ref(null);
 const mae = ref(45.2);
 const rmse = ref(67.8);
 const cpuUsage = ref(25);
@@ -361,8 +361,12 @@ const qualityStatus = computed(() => {
   return 'status-bad';
 });
 
-const accuracyDisplay = computed(() => {
-  return accuracy.value === null ? '--' : `${accuracy.value}%`;
+const r2ScoreDisplay = computed(() => {
+  return r2Score.value === null ? '--' : `${(r2Score.value * 100).toFixed(1)}%`;
+});
+
+const r2ScoreValue = computed(() => {
+  return r2Score.value === null ? '--' : r2Score.value.toFixed(3);
 });
 
 // Methods
@@ -393,7 +397,7 @@ const refreshData = async () => {
     
     mae.value = metricsData.mae;
     rmse.value = metricsData.rmse;
-    accuracy.value = Number((100 - (metricsData.mae / 1000) * 100).toFixed(3)); // Simplified accuracy calculation, 3 decimals
+    r2Score.value = metricsData.r2_score ?? null;
 
     // Update forecast
     await updateForecast();

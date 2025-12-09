@@ -19,7 +19,7 @@
             <span class="stat-value">{{ confidenceRange }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Model Used</span>
+            <span class="stat-label">Model Used: </span>
             <span class="stat-value">{{ modelUsed }}</span>
           </div>
         </div>

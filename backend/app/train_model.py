@@ -9,7 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from .infrastructure.services.feature_engineering import make_features
 
@@ -75,6 +75,7 @@ def train_model(data_path: Path = DATA_PATH, horizon: int = 1) -> dict:
     mae = float(mean_absolute_error(y_true, preds))
     mse = mean_squared_error(y_true, preds)
     rmse = float(np.sqrt(mse))
+    r2 = float(r2_score(y_true, preds))
 
     ARTIFACTS_DIR.mkdir(exist_ok=True)
     payload = {
@@ -90,7 +91,7 @@ def train_model(data_path: Path = DATA_PATH, horizon: int = 1) -> dict:
     if horizon == 1:
         joblib.dump(payload, ARTIFACTS_DIR / 'model.joblib')
 
-    metrics = {'horizon': horizon, 'mae': mae, 'rmse': rmse}
+    metrics = {'horizon': horizon, 'mae': mae, 'rmse': rmse, 'r2_score': r2}
     _metrics_filename(horizon).write_text(json.dumps(metrics, indent=2))
     if horizon == 1:
         (ARTIFACTS_DIR / 'metrics.json').write_text(json.dumps(metrics, indent=2))
