@@ -62,6 +62,13 @@
           </label>
           <small class="helper">Surface raw LightGBM decision paths.</small>
         </div>
+        <div>
+          <label class="checkbox">
+            <input type="checkbox" v-model="singleParams.useLiveWeather" />
+            Use Live Weather
+          </label>
+          <small class="helper">Fetch real-time data from OpenWeatherMap.</small>
+        </div>
       </div>
 
       <div v-else class="form-stack">
@@ -153,6 +160,7 @@ const selectDefaultHorizon = () => sanitizedHorizonOptions.value[0];
 const singleParams = reactive({
   horizon: selectDefaultHorizon(),
   includeComponents: false,
+  useLiveWeather: true,
 });
 
 const batchParams = reactive({

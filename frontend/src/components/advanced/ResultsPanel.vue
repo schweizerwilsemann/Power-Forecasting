@@ -22,6 +22,10 @@
             <span class="stat-label">Model Used: </span>
             <span class="stat-value">{{ modelUsed }}</span>
           </div>
+          <div class="stat-item">
+            <span class="stat-label">Data Source: </span>
+            <span class="stat-value">{{ dataSource }}</span>
+          </div>
         </div>
 
         <div class="chart-container">
@@ -271,6 +275,14 @@ const confidenceRange = computed(() => {
   const lower = Math.min(...intervals.map((item) => item.lower));
   const upper = Math.max(...intervals.map((item) => item.upper));
   return formatConfidence({ lower, upper });
+});
+
+const dataSource = computed(() => {
+  if (!normalizedResults.value.length) return 'N/A';
+  const src = normalizedResults.value[0].source;
+  if (src === 'live_weather') return 'Live Weather 🟢';
+  if (src === 'historical_simulation') return 'Historical Sim 🟠';
+  return src || 'Unknown';
 });
 
 const decoratedScenarioResults = computed(() => {

@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class PointForecastRequest(BaseModel):
     horizon: Optional[int] = Field(1, description="Number of 15-minute steps ahead to forecast")
-    include_components: bool = Field(False, description="Return model leaf indices for debugging")
+    include_components: bool = Field(False, description="Return model leaf indices for debugging", alias="includeComponents")
+    use_live_weather: bool = Field(True, description="Use real-time weather from OpenWeatherMap if available", alias="useLiveWeather")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class HistoryPoint(BaseModel):
@@ -34,6 +37,7 @@ class ForecastResponse(BaseModel):
     step_index: Optional[int] = Field(None, description="1-based index within the horizon window")
     leaf_indices: Optional[list] = None
     confidence_interval: Optional[Dict[str, float]] = None
+    source: Optional[str] = Field(None, description="Source of weather data: live_weather or historical_simulation")
 
 
 class AdvancedForecastRequest(BaseModel):

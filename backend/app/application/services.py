@@ -6,6 +6,8 @@ from ..domain.entities import ModelState
 from ..domain.exceptions import HistoryNotAvailableError, ModelNotReadyError
 from ..domain.interfaces import HistoryGateway, ModelGateway
 from ..infrastructure.services.feature_engineering import FeatureEngineer
+from ..infrastructure.services.weather_service import OpenWeatherService
+from ..infrastructure.services.weather_adapter import WeatherAdapter
 
 
 class ForecastingService:
@@ -16,10 +18,14 @@ class ForecastingService:
         model_gateway: ModelGateway,
         history_gateway: HistoryGateway,
         feature_engineer: FeatureEngineer,
+        weather_service: Optional[OpenWeatherService] = None,
+        weather_adapter: Optional[WeatherAdapter] = None,
     ) -> None:
         self._model_gateway = model_gateway
         self._history_gateway = history_gateway
         self._feature_engineer = feature_engineer
+        self._weather_service = weather_service
+        self._weather_adapter = weather_adapter
 
     def model_ready(self, horizon: Optional[int] = None) -> bool:
         return self._model_gateway.is_ready(horizon)
@@ -29,7 +35,12 @@ class ForecastingService:
             raise ModelNotReadyError('Model artifacts not available')
         return self._model_gateway.get_state(horizon)
 
-    def forecast_next(self, horizon: Optional[int], include_components: bool) -> Dict[str, Any]:
+    def forecast_next(
+        self, 
+        horizon: Optional[int], 
+        include_components: bool,
+        use_live_weather: bool = True
+    ) -> Dict[str, Any]:
         state = self._load_state(horizon)
 
         history_df = self._history_gateway.load(limit=self._feature_engineer.history_window)
@@ -37,12 +48,49 @@ class ForecastingService:
             raise HistoryNotAvailableError('Historical dataset is empty')
 
         prepared_history = self._feature_engineer.normalise_history(history_df)
-        features = self._feature_engineer.features_from_history(prepared_history, state)
+
+        # Decide whether to use real-time weather or history-based next step
+        use_live = use_live_weather and self._weather_service and self._weather_adapter
+        
+        if use_live:
+            try:
+                # 1. Fetch live weather
+                api_data = self._weather_service.get_current_weather()
+                # 2. Adapt to model features (mock future)
+                future_df = self._weather_adapter.to_model_input(api_data)
+                prepared_future = self._feature_engineer.normalise_future(future_df)
+                
+                # 3. Combine with history to generate lags
+                features = self._feature_engineer.features_from_future(
+                    prepared_history, 
+                    prepared_future, 
+                    state
+                )
+                
+                # Check if we got features (tail 1)
+                if features.empty:
+                    # Fallback to history if feature engineering fails for some reason
+                    use_live = False
+                else:
+                    # For forecast_next, we expect exactly 1 row if we provide 1 future row
+                    # But features_from_future handles returning the tail matching future_df
+                    pass
+
+            except Exception as e:
+                # Log error and fallback
+                print(f"Live weather failed: {e}. Falling back to historical simulation.")
+                use_live = False
+
+        if not use_live:
+            # Original Logic: Predict next step based on history end
+            features = self._feature_engineer.features_from_history(prepared_history, state)
 
         prediction = float(state.model.predict(features)[0])
+        
         response: Dict[str, Any] = {
             'prediction_wh': prediction,
             'horizon_steps': state.horizon,
+            'source': 'live_weather' if use_live else 'historical_simulation'
         }
 
         if include_components and hasattr(state.model, 'predict'):

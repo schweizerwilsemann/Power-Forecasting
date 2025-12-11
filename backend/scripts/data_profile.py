@@ -158,7 +158,7 @@ def main() -> None:
     parser.add_argument(
         '--csv',
         type=Path,
-        default=Path('../Renewable.csv'),
+        default=Path(__file__).resolve().parents[2] / 'Renewable.csv',
         help='Path to the source CSV dataset',
     )
     parser.add_argument(

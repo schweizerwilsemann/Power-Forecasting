@@ -166,6 +166,22 @@ const metaInsights = computed(() => {
     });
   }
 
+  // Detect Data Source
+  const firstPoint = props.series[0];
+  if (firstPoint?.source === 'live_weather') {
+    items.push({
+      title: 'Data Source: Live Weather',
+      description: 'Real-time conditions from OpenWeatherMap (Germany).',
+      intent: 'positive',
+    });
+  } else if (firstPoint?.source === 'historical_simulation') {
+    items.push({
+      title: 'Data Source: Historical Simulation',
+      description: 'Forecast based on past data replay.',
+      intent: 'neutral',
+    });
+  }
+
   if (confidenceScore.value) {
     items.push({
       title: `${percentFormatter.format(confidenceScore.value)} confidence band`,

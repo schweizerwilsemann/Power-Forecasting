@@ -58,7 +58,11 @@ def forecast_next(
     forecasting: ForecastingService = Depends(get_forecasting_service),
 ) -> ForecastResponse:
     try:
-        result = forecasting.forecast_next(payload.horizon, payload.include_components)
+        result = forecasting.forecast_next(
+            payload.horizon, 
+            payload.include_components,
+            payload.use_live_weather
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ModelNotReadyError, HistoryNotAvailableError) as exc:
