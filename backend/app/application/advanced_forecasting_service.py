@@ -91,7 +91,7 @@ class AdvancedForecastingService:
         prediction = state.model.predict(latest_features)[0]
         
         result = {
-            "prediction_wh": float(prediction),
+            "prediction_wh": max(0.0, float(prediction)),
             "horizon_steps": state.horizon,
             "timestamp": self._current_timestamp(),
             "model_used": "lightgbm"
@@ -115,7 +115,7 @@ class AdvancedForecastingService:
         for name, model in models.items():
             try:
                 pred = model.predict(latest_features)[0]
-                predictions[name] = float(pred)
+                predictions[name] = max(0.0, float(pred))
             except NotFittedError:
                 continue
         
@@ -130,7 +130,7 @@ class AdvancedForecastingService:
         ) / total_weight
         
         result = {
-            "prediction_wh": float(ensemble_prediction),
+            "prediction_wh": max(0.0, float(ensemble_prediction)),
             "horizon_steps": state.horizon,
             "timestamp": self._current_timestamp(),
             "model_used": "ensemble",
@@ -141,7 +141,7 @@ class AdvancedForecastingService:
             pred_values = list(predictions.values())
             pred_std = np.std(pred_values)
             confidence_interval = {
-                "lower": float(ensemble_prediction - 1.96 * pred_std),
+                "lower": max(0.0, float(ensemble_prediction - 1.96 * pred_std)),
                 "upper": float(ensemble_prediction + 1.96 * pred_std),
                 "std": float(pred_std)
             }
@@ -165,7 +165,7 @@ class AdvancedForecastingService:
             if len(recent_data) < 10:
                 # Fallback to simple percentage-based confidence
                 return {
-                    "lower": float(prediction * 0.8),
+                    "lower": max(0.0, float(prediction * 0.8)),
                     "upper": float(prediction * 1.2),
                     "std": float(prediction * 0.1)
                 }
@@ -174,7 +174,7 @@ class AdvancedForecastingService:
             historical_features = self.feature_engineer.make_features(recent_data, horizon=state.horizon)
             if historical_features.empty:
                 return {
-                    "lower": float(prediction * 0.8),
+                    "lower": max(0.0, float(prediction * 0.8)),
                     "upper": float(prediction * 1.2),
                     "std": float(prediction * 0.1)
                 }
@@ -190,7 +190,7 @@ class AdvancedForecastingService:
             
             # Calculate confidence interval
             confidence_interval = {
-                "lower": float(prediction - 1.96 * error_std),
+                "lower": max(0.0, float(prediction - 1.96 * error_std)),
                 "upper": float(prediction + 1.96 * error_std),
                 "std": float(error_std)
             }
@@ -199,7 +199,7 @@ class AdvancedForecastingService:
         except Exception:
             # Fallback confidence interval
             return {
-                "lower": float(prediction * 0.8),
+                "lower": max(0.0, float(prediction * 0.8)),
                 "upper": float(prediction * 1.2),
                 "std": float(prediction * 0.1)
             }
@@ -234,13 +234,7 @@ class AdvancedForecastingService:
         weights = {'lightgbm': 0.7, 'random_forest': 0.3}
         total_weight = sum(weights.get(name, 0.1) for name in base_models.keys())
 
-        confidence_template = None
-        if include_confidence and not ensemble_mode:
-            confidence_template = self._calculate_confidence_interval(
-                state.model.predict(self.feature_engineer.features_from_history(prepared_history, state))[-1],
-                prepared_history,
-                state,
-            )
+        # Removed static confidence_template to use dynamic calculation per step
 
         for i, scenario in enumerate(weather_scenarios):
             try:
@@ -251,7 +245,17 @@ class AdvancedForecastingService:
                     for key, value in scenario.items():
                         if key == 'name':
                             continue
-                        row[key] = value
+                        # Heuristic: Apply night mask to solar irradiance inputs
+                        # Assuming site is in a timezone where 20:00-05:00 is night
+                        if key in ['GHI', 'dni', 'dhi']:
+                            hour = target_time.hour
+                            # Widen night window to 18:00 - 06:00 to catch late evening spikes
+                            if hour >= 18 or hour <= 6:
+                                row[key] = 0.0
+                            else:
+                                row[key] = value
+                        else:
+                            row[key] = value
                     future_rows.append(row)
 
                 future_df = pd.DataFrame(future_rows)
@@ -281,7 +285,10 @@ class AdvancedForecastingService:
 
                 scenario_timestamps = self.feature_engineer.extract_timestamps(future_df)
 
-                for step_idx, pred in enumerate(ensemble_preds):
+                for step_idx, raw_pred in enumerate(ensemble_preds):
+                    # Clamp prediction to 0 first to ensure consistency across all logic
+                    pred = max(0.0, float(raw_pred))
+                    
                     timestamp = (
                         scenario_timestamps[step_idx]
                         if step_idx < len(scenario_timestamps)
@@ -290,7 +297,7 @@ class AdvancedForecastingService:
                     record: Dict[str, Any] = {
                         "scenario_id": i,
                         "scenario_name": scenario.get('name', f'Scenario {i+1}'),
-                        "prediction_wh": float(pred),
+                        "prediction_wh": pred,
                         "horizon_steps": state.horizon,
                         "timestamp": timestamp,
                         "weather_conditions": scenario,
@@ -300,13 +307,17 @@ class AdvancedForecastingService:
                         if ensemble_mode:
                             candidate = [per_model_predictions[name][step_idx] for name in per_model_predictions]
                             pred_std = float(np.std(candidate))
-                            record["confidence_interval"] = {
-                                "lower": float(pred - 1.96 * pred_std),
-                                "upper": float(pred + 1.96 * pred_std),
-                                "std": pred_std,
-                            }
-                        elif confidence_template:
-                            record["confidence_interval"] = confidence_template
+                        else:
+                            # Dynamic confidence interval for single model
+                            # Use relative error (e.g. 10%) or minimum dependent on prediction magnitude
+                            # This avoids static large CI at night
+                            pred_std = max(float(pred * 0.15), 10.0) if pred > 10 else 1.0
+                            
+                        record["confidence_interval"] = {
+                            "lower": max(0.0, float(pred - 1.96 * pred_std)),
+                            "upper": float(pred + 1.96 * pred_std),
+                            "std": pred_std,
+                        }
                     results.append(record)
             except Exception as e:
                 results.append({
